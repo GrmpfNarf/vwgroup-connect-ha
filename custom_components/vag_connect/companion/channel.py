@@ -171,6 +171,9 @@ _DAY_TAPS = 16                     # weekday/Repeat taps, each read back, before
 _CLOCK_TAPS = 40                   # one-step time wheel taps, each read back
 _WHEEL_SETTLE_S = 1.5              # 4.8.1 picker: a set wheel scrolls, then settles
                                    # (24 h: up to 12 hour + 6 minute steps)
+# Charge-detail figures that exist only during an active charge (see
+# ``_drop_stale_charge_values``).
+_LIVE_CHARGE_FIELDS = ("remaining_charge_time_min", "charging_power_kw")
 # Walks whose values change only after a trip or with new car data (driving
 # data, parking position, Vehicle Health) skip polls that cannot have changed
 # them (``_walk_reason``).
@@ -1031,6 +1034,8 @@ class CompanionChannel:
                     # timer values must not follow it through a partial read.
                     for part in LOCATION_PARTS:
                         values.setdefault(prefix + part, None)
+        if self._preset.brand == "volkswagen" and nav.name == "charge_detail":
+            self._drop_stale_charge_values(values)
         for key, val in values.items():
             # #1552 — a fresh detail-screen value wins over a stale
             # overview value for the same key (direct assign, not
@@ -1039,6 +1044,33 @@ class CompanionChannel:
             self._nav_cache[key] = val
             self._nav_read_at[key] = self._wall()
             self._nav_cache_from[key] = nav.opt_in
+
+    def _drop_stale_charge_values(self, values: dict[str, object]) -> None:
+        """Forget the live charge figures once the sheet reports no active charge.
+
+        Remaining time and power exist on the charge-detail sheet only while the
+        car actively charges. In conservation charging (after the target is
+        reached) or when charging has stopped, the sheet no longer shows them,
+        so the walk finds nothing and the cache would replay the last values
+        from the active charge for up to ``COMPANION_NAV_MAX_AGE_S``. Only
+        applies when this walk read the charging state itself, so a walk that
+        merely failed to find a value mid-charge still gets the flap guard.
+
+        ⚠️ [Inference] — that the sheet omits both lines during conservation
+        charging rests on an owner report (the app shows only "charging"), not
+        on a captured screen dump of that state; the charge-state label that
+        ends a conservation read is matched by the existing resource path.
+        """
+        charging = values.get("is_charging")
+        if charging is None:
+            return
+        state = str(values.get("charging_state") or "").lower()
+        if charging is True and "conservation" not in state:
+            return
+        for key in _LIVE_CHARGE_FIELDS:
+            if key not in values:
+                self._nav_cache.pop(key, None)
+                self._nav_cache_from.pop(key, None)
 
     async def _walk_to_detail(
         self,
