@@ -167,6 +167,8 @@ CARRY_FORWARD_FIELDS: frozenset[str] = frozenset({
     "lifetime_avg_electric_consumption_kwh_100km",
     "lifetime_avg_recuperation_kwh_100km", "lifetime_trip_distance_km",
     "lifetime_trip_start_odometer_km", "lifetime_avg_aux_consumption_kwh_100km",
+    "lifetime_trip_total_electric_consumption_kwh",
+    "lifetime_trip_total_fuel_consumption_l",
     "lifetime_avg_gas_consumption_kg_100km", "lifetime_range_gain_km",
     "lifetime_zero_emission_km",
     # v4.10.0 (Scout #1655 + 9) — the third trip-computer memory, same reasoning
@@ -968,15 +970,18 @@ def reconcile(
     from ._channel_merge import (  # noqa: PLC0415
         _BATCH_SOURCES,
         is_held_source,
+        never_counts_as_live,
     )
     _fresh_soc_src = (fresh.get("field_sources") or {}).get("battery_soc")
     # A held push value is neither batch nor live: "not batch, so live" would
-    # exempt a dongle reading that can be days old from the checks below.
+    # exempt a dongle reading that can be days old from the checks below. The
+    # same goes for a gap-fill-only source (Tibber), which has no capture stamp.
+    # ``_fresh_soc_is_held`` stays held-only: the dongle rules further down.
     _fresh_soc_is_held = is_held_source(_fresh_soc_src)
     _fresh_soc_is_live = (
         _fresh_soc_src is not None
         and _fresh_soc_src not in _BATCH_SOURCES
-        and not _fresh_soc_is_held
+        and not never_counts_as_live(_fresh_soc_src)
     )
     _fresh_from_hv = merged.get("battery_soc_from_hv")
     _prev_from_hv = previous.get("battery_soc_from_hv")

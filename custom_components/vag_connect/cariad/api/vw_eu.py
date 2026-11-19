@@ -31,7 +31,7 @@ from ..exceptions import (
     SpinError,
     VehicleCommandError,
 )
-from ..models import BRAND_VW_EU, VehicleData
+from ..models import BRAND_VW_EU, MYAUDI_APP_VERSION, VehicleData
 from .base import CariadBaseClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -2194,14 +2194,16 @@ class VWEUClient(CariadBaseClient):
         fixtures). Audi uses ``myAudi``; everything else the VW We Connect id.
         """
         if self._brand.name == "audi":
-            # v2.20.0 (APK audit) — current myAudi build is 5.6.0 (was 5.5.1).
-            return "myAudi", "5.6.0"
+            # The myAudi legacy connector sends its own versionName
+            # (``de/quartettmobile/audi/connector/Connector`` headers); the
+            # value comes from the one myAudi identity in ``models.py``.
+            return "myAudi", MYAUDI_APP_VERSION
         # b13 (#503 dismantle / H5) — track the live We Connect version; the
-        # fs-car endpoints reject stale versions. v2.20.0 (APK audit): current
-        # com.volkswagen.weconnect is 4.1.1 (was 3.63.2). Unreleased (App Atlas
-        # refresh 2026-07): the fresh DEX says 4.2.1, and BrandConfig.user_agent
-        # in models.py now names the same build so the two agree.
-        return "Volkswagen", "4.2.1"
+        # fs-car endpoints reject stale versions. 4.1.1 → 4.2.1 (App Atlas
+        # 2026-07) → 4.8.1 (2026-11-18 dismantle, versionCode 408010; 0 new
+        # client-ids / endpoints). BrandConfig.user_agent in models.py names the
+        # same build so the two channels agree.
+        return "Volkswagen", "4.8.1"
 
     def _mbb_headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         app_name, app_version = self._mbb_app_identity()
@@ -3970,6 +3972,7 @@ class VWEUClient(CariadBaseClient):
                 # tried defensively.
                 total_fuel = (
                     last.get("totalFuelConsumption_l")
+                    or last.get("totalFuelConsumption_L")
                     or last.get("totalFuelConsumption")
                     or last.get("fuelConsumption_l")
                 )
@@ -4066,6 +4069,17 @@ class VWEUClient(CariadBaseClient):
                     win_speed = first.get("averageSpeed_kmph")
                     if isinstance(win_speed, (int, float)):
                         d.lifetime_avg_speed_kmh = float(win_speed)
+                    # The app's totals over the same window; the fuel key
+                    # comes with a capital L there. isinstance, not "or": 0 is
+                    # a valid reading.
+                    win_elec = first.get("totalElectricConsumption_kwh")
+                    if isinstance(win_elec, (int, float)):
+                        d.lifetime_trip_total_electric_consumption_kwh = float(win_elec)
+                    win_fuel = first.get("totalFuelConsumption_L")
+                    if not isinstance(win_fuel, (int, float)):
+                        win_fuel = first.get("totalFuelConsumption_l")
+                    if isinstance(win_fuel, (int, float)):
+                        d.lifetime_trip_total_fuel_consumption_l = float(win_fuel)
 
     def _parse_refuel_trip(
         self,
@@ -4420,6 +4434,13 @@ class VWEUClient(CariadBaseClient):
         nav_eta = v(raw, "charging", "chargingStatus", "value", "remainingChargingTimeNavigation_min")
         if isinstance(nav_eta, (int, float)):
             d.remaining_charge_time_nav_min = int(nav_eta)
+
+        # We Connect app 4.8.1 (BatteryStatus.chargePowerLimitationReason, an
+        # optional string-wrapper enum). The vocabulary is not known from the
+        # app, so the raw token is passed through and never mapped or dropped.
+        power_limit = v(raw, "charging", "batteryStatus", "value", "chargePowerLimitationReason")
+        if isinstance(power_limit, str) and power_limit.strip():
+            d.charge_power_limitation_reason = power_limit.strip()
 
         # v2.11.0: ``ledColor`` extraction consolidated into the
         # defensive chain at the top of this section so a second
@@ -5122,6 +5143,13 @@ class VWEUClient(CariadBaseClient):
         lock_raw = v(raw, "access", "accessStatus", "value", "doorLockStatus")
         if isinstance(lock_raw, str):
             d.doors_locked = lock_raw.upper() == "LOCKED"
+
+        # We Connect app 4.8.1 (AccessStatus.safelockActive, a required
+        # Boolean next to doorLockStatus). Only a real JSON boolean counts;
+        # anything else stays None so the entity does not appear.
+        safelock_raw = v(raw, "access", "accessStatus", "value", "safelockActive")
+        if isinstance(safelock_raw, bool):
+            d.safelock_active = safelock_raw
 
         # v2.7.0b10 — Audi parity fix. The old code only built the
         # per-door / per-window breakdown when overallStatus was

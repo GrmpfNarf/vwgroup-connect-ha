@@ -262,11 +262,30 @@ BINARY_DESCRIPTIONS: tuple[VagBinarySensorDescription, ...] = (
         icon="mdi:car-brake-fluid-level",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    # Porsche HIBERNATION_MODE (My Porsche 21.26.46). On while the car is in
+    # its hibernation mode. Read only; gated by _DATA_PRESENT_REQUIRED.
+    VagBinarySensorDescription(
+        key="hibernation_mode",
+        translation_key="hibernation_mode",
+        data_key="hibernation_mode",
+        icon="mdi:sleep",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     # v4.10.0 (#1661) — the BMS energy counters' wrap flags ("mindestens 1x
     # übergelaufen", per the official V6.0 catalogue). True means the kWh total
     # beside it has wrapped at least once and is no longer a clean cumulative
     # figure, so these are the trust indicator for those two sensors rather than
     # a fault — hence no PROBLEM class. Gated by _DATA_PRESENT_REQUIRED.
+    # We Connect app 4.8.1 — AccessStatus.safelockActive (Boolean; exact
+    # meaning not documented in the app). Diagnostic, no device_class, gated
+    # by _DATA_PRESENT_REQUIRED.
+    VagBinarySensorDescription(
+        key="safelock_active",
+        translation_key="safelock_active",
+        data_key="safelock_active",
+        icon="mdi:lock-check",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     VagBinarySensorDescription(
         key="hv_battery_consumption_overflow",
         translation_key="hv_battery_consumption_overflow",
@@ -352,6 +371,16 @@ _NEW_BINARY: tuple[VagBinarySensorDescription, ...] = (
         translation_key="marketing_consent_given",
         data_key="marketing_consent_given",
         icon="mdi:email-check-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # MyŠkoda 8.18.0 — garage document ``workshopModeEnabled``. ON = the car is
+    # in workshop mode (the app then holds back remote services). Škoda only,
+    # data-present gated.
+    VagBinarySensorDescription(
+        key="workshop_mode",
+        translation_key="workshop_mode",
+        data_key="workshop_mode",
+        icon="mdi:car-wrench",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     VagBinarySensorDescription(
@@ -1221,6 +1250,7 @@ _DATA_PRESENT_REQUIRED: frozenset[str] = frozenset({
     "seat_heating",
     "mandatory_consent_given",       # Skoda-only (consents) — v2.31.0
     "marketing_consent_given",       # Skoda-only (consents) — v2.31.0
+    "workshop_mode",                 # Skoda-only (garage document) — 8.18.0
     "parking_light",
     "external_power",
     "battery_care",
@@ -1234,9 +1264,13 @@ _DATA_PRESENT_REQUIRED: frozenset[str] = frozenset({
     # BMS_05 Ueberlauf signals get these.
     "hv_battery_consumption_overflow",
     "hv_battery_recuperation_overflow",
+    # App 4.8.1 AccessStatus.safelockActive; only cars that report it.
+    "safelock_active",
     # #1592 — Audi Q6 PPE portal brake-fluid warning lamp; cars that don't
     # report the FlexRay/ESC signal stay None → no phantom entity.
     "brake_fluid_warning",
+    # Porsche HIBERNATION_MODE; other brands leave it None.
+    "hibernation_mode",
     # v2.5.0 (#306 goncal Mii) — sunroof is option-dependent. Many cars
     # don't have a sunroof; parser leaves field None → no phantom entity.
     "sunroof_open",
