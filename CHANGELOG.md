@@ -46,6 +46,10 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Behoben / Fixed
+
+- **Companion (ADB): remaining charge time and charging power no longer stay on the last values of the active charge once the car goes to conservation charging.** The charge-detail sheet shows both only while the car actively charges. When the target charge level is reached and the car switches to conservation charging, the sheet shows neither, so the read found no value and the companion's read cache filled the gap with the last ones for up to 24 hours: an ID.4 kept showing about 5 minutes remaining and 11 kW while the VW app showed nothing. When a read of the sheet reports a charging state that is not an active charge (conservation charging, or charging stopped) and shows no remaining time or power, those two values are now left empty (`unknown`) instead of being filled from the cache. A read that does not report the charging state still keeps the cache, so a value missed while the car is really charging does not make the sensors flap. Reported by @GrmpfNarf. Covered by unit tests on the cache handling, including a charging screen followed by a target-reached screen; the conservation charging screen itself has not been captured, so that part rests on the owner's description and was not tried on a car.
+
 ## [5.5.0] - 2026-11-19 — "Like the apps / Wie die Apps"
 
 ### Hinzugefügt / Added
